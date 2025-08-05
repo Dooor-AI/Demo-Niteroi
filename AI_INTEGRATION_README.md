@@ -49,6 +49,7 @@ GEMINI_API_KEY=your_gemini_api_key_here
 
 ### ✅ Recursos Adicionados:
 - **Integração real com APIs de IA** (OpenAI, Claude, Gemini, etc.)
+- **Sistema de chats dinâmico** com localStorage
 - **Renderização de Markdown** com formatação rica
 - **Tratamento de erros** com mensagens amigáveis
 - **Loading states** durante processamento
@@ -60,6 +61,7 @@ GEMINI_API_KEY=your_gemini_api_key_here
 
 ### 🔄 Melhorias no Componente:
 - Substituição do mock por chamadas reais de API
+- **Sistema de múltiplos chats** com persistência local
 - **Renderização de Markdown** para respostas da IA
 - **Visual moderno** com bolhas de chat arredondadas
 - Gerenciamento de estado de erro
@@ -67,6 +69,8 @@ GEMINI_API_KEY=your_gemini_api_key_here
 - Botões de ação rápida funcionais
 - Desabilitação de inputs durante processamento
 - **Formatação rica** com negrito, itálico, listas e citações
+- **Busca e filtro** de conversas
+- **Títulos automáticos** baseados na primeira mensagem
 
 ## 📝 Como Usar
 
