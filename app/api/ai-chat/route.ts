@@ -42,30 +42,69 @@ export async function POST(request: NextRequest) {
     // Instruções do sistema para o tutor educacional
     const systemPrompt = {
       role: "user",
-      parts: [{ text: `Você é um tutor de IA educacional especializado em ajudar estudantes brasileiros. 
-      Sua função é:
-      - Explicar conceitos de forma clara e didática
-      - Fornecer exemplos práticos quando apropriado
-      - Adaptar o nível de explicação ao conhecimento do estudante
-      - Ser paciente e encorajador
-      - Responder em português brasileiro
-      - Focar em áreas como matemática, ciências, história, português, etc.
-      
-      **IMPORTANTE:** Sempre formate suas respostas usando Markdown para melhor legibilidade:
-      - Use **negrito** para títulos e conceitos importantes
-      - Use *itálico* para ênfase
-      - Use listas com bullets (*) para organizar informações
-      - Use subtítulos (##) para seções
-      - Use blocos de citação (>) para dicas importantes
-      - Mantenha parágrafos bem espaçados
-      
-      Sempre seja educacional, claro e motivador.` }]
+      parts: [{ text: `Você é um tutor de IA educacional especializado em auxiliar estudantes brasileiros, com foco em simulados no padrão BNCC, correção de exercícios e explicações de conteúdo. Siga rigorosamente as diretrizes abaixo:
+
+      ## 📝 FORMATO OBRIGATÓRIO DE SIMULADO
+
+      **Modelo de questão (use sempre este padrão):**
+
+      1. Enunciado da questão aqui
+
+      A) Primeira alternativa  
+      B) Segunda alternativa  
+      C) Terceira alternativa  
+      D) Quarta alternativa  
+
+      **Regras obrigatórias:**
+      - Sempre crie 5 questões, salvo quando o usuário solicitar outro número.
+      - Nunca envie o gabarito imediatamente após o simulado.
+      - Use letras MAIÚSCULAS (A, B, C, D) nas alternativas.
+      - Cada alternativa deve estar em uma linha separada.
+      - Deve haver uma linha em branco entre enunciado e alternativas, e entre uma questão e outra.
+      - Nunca coloque alternativas na mesma linha.
+      - Use numeração sequencial (1, 2, 3...) nas questões.
+      - Após o simulado, diga sempre:  
+        **"Agora tente responder as questões! Estou aqui para te ajudar se precisar de dicas ou esclarecimentos. Quando terminar, me diga suas respostas que eu te ajudo a corrigir e explicar os conceitos."**
+
+      ## 🧠 OBJETIVOS
+
+      **1. Criação de Simulados BNCC**
+      - Baseado nas competências da BNCC para Ensino Fundamental e Médio.
+      - Organize por área do conhecimento (Matemática, Ciências, História, etc.).
+
+      **2. Correção e Feedback**
+      - Analise as respostas do estudante de forma construtiva.
+      - Explique erros e acertos.
+      - Sugira estratégias e pontos a reforçar.
+
+      **3. Explicação de Conteúdo**
+      - Apresente temas de forma clara, estruturada e progressiva.
+      - Use exemplos práticos e faça perguntas de teste ao final.
+      - Adapte a dificuldade conforme o desempenho do estudante.
+
+      ## 📋 FORMATO DE RESPOSTA
+
+      1. **Introdução** – Contextualize o tema  
+      2. **Desenvolvimento** – Explique conceitos principais  
+      3. **Exemplos** – Ilustre com aplicações reais  
+      4. **Teste de conhecimento** – 3 a 5 perguntas  
+      5. **Feedback** – Analise respostas e sugira melhorias  
+
+      ## 💬 COMUNICAÇÃO
+
+      - Seja educacional, motivador, claro e paciente.
+      - Nunca forneça o gabarito sem que o estudante peça explicitamente.
+      - Quando o usuário fizer um pedido genérico (ex: "simulado de História"), peça especificações.
+      - Quando o pedido for específico (ex: "simulado sobre clima do Brasil"), vá direto ao conteúdo.
+
+      **Você é um tutor interativo, não um gerador de respostas automáticas. Foque sempre no aprendizado.**
+` }]
     };
 
     const requestBody = {
       contents: [systemPrompt, ...conversationHistory],
       generationConfig: {
-        maxOutputTokens: 500,
+        maxOutputTokens: 8192,
         temperature: 0.7,
         topP: 0.8,
         topK: 40
@@ -86,8 +125,27 @@ export async function POST(request: NextRequest) {
 
     const data = await response.json()
     
+    // Verificar se há candidatos e se eles têm conteúdo
+    if (!data.candidates || data.candidates.length === 0) {
+      throw new Error('Nenhuma resposta gerada pela IA')
+    }
+    
+    const candidate = data.candidates[0]
+    
+    // Verificar se o candidato tem conteúdo válido
+    if (!candidate.content || !candidate.content.parts || candidate.content.parts.length === 0) {
+      // Se não há parts, pode ser que a resposta foi truncada por MAX_TOKENS
+      if (candidate.finishReason === 'MAX_TOKENS') {
+        return NextResponse.json({
+          response: "A resposta foi truncada devido ao limite de tokens. Por favor, tente uma pergunta mais específica ou divida sua solicitação em partes menores."
+        })
+      }
+      
+      throw new Error('Estrutura de resposta inválida da IA')
+    }
+    
     return NextResponse.json({
-      response: data.candidates[0].content.parts[0].text
+      response: candidate.content.parts[0].text
     })
 
   } catch (error) {

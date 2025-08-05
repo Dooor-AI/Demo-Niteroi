@@ -42,7 +42,7 @@ export function MarkdownMessage({ content, className }: MarkdownMessageProps) {
             </ul>
           ),
           ol: ({ children }) => (
-            <ol className="list-decimal list-inside space-y-1 mb-2">
+            <ol className="list-decimal space-y-1 mb-2">
               {children}
             </ol>
           ),

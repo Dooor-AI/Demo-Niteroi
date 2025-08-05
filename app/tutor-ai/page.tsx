@@ -100,14 +100,14 @@ class AIService {
       const requestBody = {
         contents: [systemPrompt, ...conversationHistory],
         generationConfig: {
-          maxOutputTokens: 500,
+          maxOutputTokens: 8192,
           temperature: 0.7,
           topP: 0.8,
           topK: 40
         }
       };
 
-      const response = await fetch(`${this.apiUrl}/gemini-2.0-flash-exp:generateContent?key=${this.apiKey}`, {
+      const response = await fetch(`${this.apiUrl}/gemini-2.5-flash:generateContent?key=${this.apiKey}`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
