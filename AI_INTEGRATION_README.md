@@ -48,20 +48,25 @@ GEMINI_API_KEY=your_gemini_api_key_here
 ## 🚀 Funcionalidades Implementadas
 
 ### ✅ Recursos Adicionados:
-- **Integração real com APIs de IA** (OpenAI, Claude, etc.)
+- **Integração real com APIs de IA** (OpenAI, Claude, Gemini, etc.)
+- **Renderização de Markdown** com formatação rica
 - **Tratamento de erros** com mensagens amigáveis
 - **Loading states** durante processamento
 - **Quick actions** funcionais (explicar, exercícios, resumo)
 - **Contexto de conversa** mantido entre mensagens
 - **System prompt** especializado para educação
 - **Tipagem TypeScript** completa
+- **Visual moderno** com bolhas de chat estilizadas
 
 ### 🔄 Melhorias no Componente:
 - Substituição do mock por chamadas reais de API
+- **Renderização de Markdown** para respostas da IA
+- **Visual moderno** com bolhas de chat arredondadas
 - Gerenciamento de estado de erro
 - Feedback visual durante carregamento
 - Botões de ação rápida funcionais
 - Desabilitação de inputs durante processamento
+- **Formatação rica** com negrito, itálico, listas e citações
 
 ## 📝 Como Usar
 

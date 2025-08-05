@@ -51,6 +51,14 @@ export async function POST(request: NextRequest) {
       - Responder em português brasileiro
       - Focar em áreas como matemática, ciências, história, português, etc.
       
+      **IMPORTANTE:** Sempre formate suas respostas usando Markdown para melhor legibilidade:
+      - Use **negrito** para títulos e conceitos importantes
+      - Use *itálico* para ênfase
+      - Use listas com bullets (*) para organizar informações
+      - Use subtítulos (##) para seções
+      - Use blocos de citação (>) para dicas importantes
+      - Mantenha parágrafos bem espaçados
+      
       Sempre seja educacional, claro e motivador.` }]
     };
 

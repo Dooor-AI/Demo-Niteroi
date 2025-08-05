@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import { MarkdownMessage } from "@/components/ui/markdown-message"
 import {
   Send,
   Clock,
@@ -81,6 +82,14 @@ class AIService {
         - Ser paciente e encorajador
         - Responder em português brasileiro
         - Focar em áreas como matemática, ciências, história, português, etc.
+        
+        **IMPORTANTE:** Sempre formate suas respostas usando Markdown para melhor legibilidade:
+        - Use **negrito** para títulos e conceitos importantes
+        - Use *itálico* para ênfase
+        - Use listas com bullets (*) para organizar informações
+        - Use subtítulos (##) para seções
+        - Use blocos de citação (>) para dicas importantes
+        - Mantenha parágrafos bem espaçados
         
         Sempre seja educacional, claro e motivador.` }]
       };
@@ -421,11 +430,11 @@ export default function TutorAI() {
 
           {/* Messages Area */}
           <ScrollArea className="flex-1 p-4">
-            <div className="space-y-4 max-w-4xl mx-auto">
+            <div className="space-y-6 max-w-4xl mx-auto">
               {messages.map((message) => (
                 <div key={message.id} className={`flex ${message.type === "user" ? "justify-end" : "justify-start"}`}>
                   <div
-                    className={`flex items-start space-x-3 max-w-[80%] ${
+                    className={`flex items-start space-x-3 max-w-[85%] ${
                       message.type === "user" ? "flex-row-reverse space-x-reverse" : ""
                     }`}
                   >
@@ -441,14 +450,30 @@ export default function TutorAI() {
                       )}
                     </Avatar>
                     <div
-                      className={`rounded-lg p-4 ${
-                        message.type === "user" ? "bg-blue-600 text-white" : "bg-white border shadow-sm"
+                      className={`rounded-2xl p-4 shadow-sm ${
+                        message.type === "user" 
+                          ? "bg-blue-600 text-white" 
+                          : "bg-white border border-gray-200 hover:border-gray-300 transition-colors"
                       }`}
                     >
-                      <p className="text-sm font-normal leading-relaxed">{message.content}</p>
-                      <p className={`text-xs mt-2 ${message.type === "user" ? "text-blue-100" : "text-gray-500"}`}>
-                        {message.timestamp.toLocaleTimeString()}
-                      </p>
+                      {message.type === "user" ? (
+                        <div>
+                          <p className="text-sm font-normal leading-relaxed">{message.content}</p>
+                          <p className="text-xs mt-2 text-blue-100 opacity-80">
+                            {message.timestamp.toLocaleTimeString()}
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="ai-message">
+                          <MarkdownMessage 
+                            content={message.content} 
+                            className="text-gray-800"
+                          />
+                          <p className="text-xs mt-3 text-gray-500 opacity-70">
+                            {message.timestamp.toLocaleTimeString()}
+                          </p>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
