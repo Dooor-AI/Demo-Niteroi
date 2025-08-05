@@ -21,13 +21,145 @@ import {
   Plus,
   Search,
   MoreVertical,
+  AlertCircle,
 } from "lucide-react"
 
+// Tipos para a API
+interface Message {
+  id: number;
+  type: "ai" | "user";
+  content: string;
+  timestamp: Date;
+}
+
+interface ChatHistory {
+  id: number;
+  title: string;
+  lastMessage: string;
+  timestamp: Date;
+  isActive: boolean;
+}
+
+interface AIResponse {
+  content: string;
+  error?: string;
+}
+
+// Serviço de API para IA
+class AIService {
+  private apiUrl: string;
+  private apiKey: string;
+
+  constructor() {
+    // Configure sua API aqui - você pode usar OpenAI, Claude, ou qualquer outra API de IA
+    this.apiUrl = process.env.NEXT_PUBLIC_AI_API_URL || "https://generativelanguage.googleapis.com/v1beta/models";
+    this.apiKey = process.env.NEXT_PUBLIC_AI_API_KEY || "";
+  }
+
+  async generateResponse(messages: Message[], userInput: string): Promise<AIResponse> {
+    try {
+      // Preparar o contexto da conversa para a IA
+      const conversationHistory = messages.map(msg => ({
+        role: msg.type === "user" ? "user" : "model",
+        parts: [{ text: msg.content }]
+      }));
+
+      // Adicionar a nova mensagem do usuário
+      conversationHistory.push({
+        role: "user",
+        parts: [{ text: userInput }]
+      });
+
+      // Adicionar instruções do sistema para o tutor educacional
+      const systemPrompt = {
+        role: "user",
+        parts: [{ text: `Você é um tutor de IA educacional especializado em ajudar estudantes brasileiros. 
+        Sua função é:
+        - Explicar conceitos de forma clara e didática
+        - Fornecer exemplos práticos quando apropriado
+        - Adaptar o nível de explicação ao conhecimento do estudante
+        - Ser paciente e encorajador
+        - Responder em português brasileiro
+        - Focar em áreas como matemática, ciências, história, português, etc.
+        
+        Sempre seja educacional, claro e motivador.` }]
+      };
+
+      const requestBody = {
+        contents: [systemPrompt, ...conversationHistory],
+        generationConfig: {
+          maxOutputTokens: 500,
+          temperature: 0.7,
+          topP: 0.8,
+          topK: 40
+        }
+      };
+
+      const response = await fetch(`${this.apiUrl}/gemini-2.0-flash-exp:generateContent?key=${this.apiKey}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(requestBody),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Erro na API: ${response.status}`);
+      }
+
+      const data = await response.json();
+      return {
+        content: data.candidates[0].content.parts[0].text
+      };
+
+    } catch (error) {
+      console.error("Erro ao chamar API de IA:", error);
+      return {
+        content: "Desculpe, estou enfrentando dificuldades técnicas no momento. Pode tentar novamente em alguns instantes?",
+        error: error instanceof Error ? error.message : "Erro desconhecido"
+      };
+    }
+  }
+
+  // Método alternativo para APIs que não seguem o formato OpenAI
+  async generateResponseAlternative(messages: Message[], userInput: string): Promise<AIResponse> {
+    try {
+      // Exemplo para outras APIs (Claude, Gemini, etc.)
+      const response = await fetch("/api/ai-chat", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          messages: messages,
+          userInput: userInput,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Erro na API: ${response.status}`);
+      }
+
+      const data = await response.json();
+      return {
+        content: data.response
+      };
+
+    } catch (error) {
+      console.error("Erro ao chamar API de IA:", error);
+      return {
+        content: "Desculpe, estou enfrentando dificuldades técnicas no momento. Pode tentar novamente em alguns instantes?",
+        error: error instanceof Error ? error.message : "Erro desconhecido"
+      };
+    }
+  }
+}
+
 export default function TutorAI() {
-  const [messages, setMessages] = useState([
+  const [messages, setMessages] = useState<Message[]>([
     {
       id: 1,
-      type: "ai" as const,
+      type: "ai",
       content:
         "Olá! Sou seu tutor de IA personalizado. Estou aqui para ajudá-lo a aprender de forma mais eficiente. Sobre o que gostaria de conversar hoje?",
       timestamp: new Date(Date.now() - 1000 * 60 * 5),
@@ -35,10 +167,12 @@ export default function TutorAI() {
   ])
   const [inputMessage, setInputMessage] = useState("")
   const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const aiService = new AIService()
 
   // Histórico de conversas com nomes gerados por IA
-  const [chatHistory] = useState([
+  const [chatHistory] = useState<ChatHistory[]>([
     {
       id: 1,
       title: "Matemática: Equações Quadráticas",
@@ -108,9 +242,9 @@ export default function TutorAI() {
   const handleSendMessage = async () => {
     if (!inputMessage.trim()) return
 
-    const userMessage = {
-      id: messages.length + 1,
-      type: "user" as const,
+    const userMessage: Message = {
+      id: Date.now(),
+      type: "user",
       content: inputMessage,
       timestamp: new Date(),
     }
@@ -118,29 +252,42 @@ export default function TutorAI() {
     setMessages((prev) => [...prev, userMessage])
     setInputMessage("")
     setIsLoading(true)
+    setError(null)
 
-    // Simular resposta da IA
-    setTimeout(() => {
-      const aiResponse = {
-        id: messages.length + 2,
-        type: "ai" as const,
-        content: generateAIResponse(inputMessage),
+    try {
+      // Chamar a API de IA real
+      const aiResponse = await aiService.generateResponse(messages, userMessage.content)
+      
+      if (aiResponse.error) {
+        setError(aiResponse.error)
+        setIsLoading(false)
+        return
+      }
+
+      const aiMessage: Message = {
+        id: Date.now() + 1,
+        type: "ai",
+        content: aiResponse.content,
         timestamp: new Date(),
       }
-      setMessages((prev) => [...prev, aiResponse])
+
+      setMessages((prev) => [...prev, aiMessage])
+    } catch (error) {
+      console.error("Erro ao processar mensagem:", error)
+      setError("Erro ao processar sua mensagem. Tente novamente.")
+    } finally {
       setIsLoading(false)
-    }, 1500)
+    }
   }
 
-  const generateAIResponse = (input: string) => {
-    const responses = [
-      "Excelente pergunta! Vou explicar isso de forma clara e didática...",
-      "Vamos abordar esse conceito passo a passo para facilitar seu entendimento...",
-      "Baseado no seu nível de aprendizado, sugiro começarmos por aqui...",
-      "Essa é uma dúvida muito comum! Deixe-me esclarecer com exemplos práticos...",
-      "Para consolidar esse conhecimento, que tal resolvermos alguns exercícios juntos?",
-    ]
-    return responses[Math.floor(Math.random() * responses.length)]
+  const handleQuickAction = (action: string) => {
+    const quickMessages = {
+      "explicar": "Pode explicar este conceito de forma mais detalhada?",
+      "exercicios": "Gostaria de ver alguns exercícios práticos sobre este tema.",
+      "resumo": "Pode fazer um resumo rápido dos pontos principais?"
+    }
+    
+    setInputMessage(quickMessages[action as keyof typeof quickMessages] || "")
   }
 
   const formatTime = (date: Date) => {
@@ -262,6 +409,16 @@ export default function TutorAI() {
             </div>
           </div>
 
+          {/* Error Message */}
+          {error && (
+            <div className="bg-red-50 border border-red-200 p-3 mx-4 mt-4 rounded-lg">
+              <div className="flex items-center space-x-2">
+                <AlertCircle className="h-4 w-4 text-red-500" />
+                <span className="text-sm text-red-700">{error}</span>
+              </div>
+            </div>
+          )}
+
           {/* Messages Area */}
           <ScrollArea className="flex-1 p-4">
             <div className="space-y-4 max-w-4xl mx-auto">
@@ -335,6 +492,7 @@ export default function TutorAI() {
                     placeholder="Digite sua pergunta ou dúvida..."
                     onKeyPress={(e) => e.key === "Enter" && handleSendMessage()}
                     className="font-normal"
+                    disabled={isLoading}
                   />
                 </div>
                 <Button
@@ -349,15 +507,33 @@ export default function TutorAI() {
               {/* Quick Actions */}
               <div className="flex items-center space-x-2 mt-3">
                 <span className="text-xs text-gray-500 font-medium">Sugestões:</span>
-                <Button variant="outline" size="sm" className="text-xs font-normal bg-transparent">
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  className="text-xs font-normal bg-transparent"
+                  onClick={() => handleQuickAction("explicar")}
+                  disabled={isLoading}
+                >
                   <Lightbulb className="h-3 w-3 mr-1" />
                   Explicar conceito
                 </Button>
-                <Button variant="outline" size="sm" className="text-xs font-normal bg-transparent">
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  className="text-xs font-normal bg-transparent"
+                  onClick={() => handleQuickAction("exercicios")}
+                  disabled={isLoading}
+                >
                   <BookOpen className="h-3 w-3 mr-1" />
                   Exercícios práticos
                 </Button>
-                <Button variant="outline" size="sm" className="text-xs font-normal bg-transparent">
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  className="text-xs font-normal bg-transparent"
+                  onClick={() => handleQuickAction("resumo")}
+                  disabled={isLoading}
+                >
                   <Zap className="h-3 w-3 mr-1" />
                   Resumo rápido
                 </Button>
