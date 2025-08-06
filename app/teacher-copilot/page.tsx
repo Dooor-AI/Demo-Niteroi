@@ -53,7 +53,12 @@ function Timestamp({ date }: { date: Date }) {
 }
 
 export default function TeacherCopilot() {
-  const [messages, setMessages] = useState([
+  const [messages, setMessages] = useState<Array<{
+    id: number
+    type: "ai" | "user"
+    content: string
+    timestamp: Date
+  }>>([
     {
       id: 1,
       type: "ai" as const,
@@ -85,7 +90,6 @@ export default function TeacherCopilot() {
     topic: "",
     duration: ""
   })
-  const messagesEndRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const studentFileInputRef = useRef<HTMLInputElement>(null)
 
@@ -100,18 +104,9 @@ export default function TeacherCopilot() {
     { id: "communication", name: "Comunicação", active: false },
   ]
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
-  }
 
-  useEffect(() => {
-    // Scroll para baixo apenas quando uma nova mensagem é adicionada
-    const timeoutId = setTimeout(() => {
-      scrollToBottom()
-    }, 100) // Pequeno delay para garantir que o DOM foi atualizado
-    
-    return () => clearTimeout(timeoutId)
-  }, [messages.length]) // Monitora apenas o comprimento do array, não o conteúdo
+
+
 
   const handleSendMessage = async () => {
     if (!inputMessage.trim()) return
@@ -431,7 +426,7 @@ Formate a resposta de forma clara e organizada para fácil implementação em sa
 
             {/* Chat Tab */}
             <TabsContent value="chat" className="flex-1 min-h-0">
-              <Card className="flex flex-col h-full min-h-[500px]">
+              <Card className="flex flex-col h-[600px]">
                 <CardHeader className="pb-3 flex-shrink-0">
                   <CardTitle className="font-bold flex items-center gap-2">
                     <MessageSquare className="h-5 w-5 text-blue-600" />
@@ -445,7 +440,7 @@ Formate a resposta de forma clara e organizada para fácil implementação em sa
                 <CardContent className="flex-1 flex flex-col p-0 min-h-0">
                   <div className="flex-1 overflow-hidden">
                     <ScrollArea className="h-full p-4">
-                      <div className="space-y-4 min-h-0">
+                      <div className="space-y-4">
                         {messages.map((message) => (
                           <div
                             key={message.id}
@@ -496,7 +491,6 @@ Formate a resposta de forma clara e organizada para fácil implementação em sa
                             </div>
                           </div>
                         )}
-                        <div ref={messagesEndRef} />
                       </div>
                     </ScrollArea>
                   </div>
