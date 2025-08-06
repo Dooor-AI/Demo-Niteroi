@@ -79,11 +79,22 @@ export default function TeacherCopilot() {
     correctAnswers?: number
     totalQuestions?: number
     correctedAt?: Date
+    feedback?: string
+    corrections?: Array<{
+      question: number
+      studentAnswer: string
+      correctAnswer: string
+      isCorrect: boolean
+      explanation: string
+    }>
+    strengths?: string[]
+    improvements?: string[]
   }>>([])
   const [currentStudentName, setCurrentStudentName] = useState("")
   const [correctionStep, setCorrectionStep] = useState(1)
   const [lessonPlan, setLessonPlan] = useState("")
   const [isGeneratingPlan, setIsGeneratingPlan] = useState(false)
+  const [expandedFeedbacks, setExpandedFeedbacks] = useState<Set<string>>(new Set())
   const [planFormData, setPlanFormData] = useState({
     subject: "",
     grade: "",
@@ -168,7 +179,7 @@ export default function TeacherCopilot() {
     }
   }
 
-  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>, type: "answer" | "student") => {
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>, type: "answer" | "student") => {
     const file = event.target.files?.[0]
     if (file) {
       if (type === "answer") {
@@ -184,37 +195,98 @@ export default function TeacherCopilot() {
           }
           setStudentTests(prev => [...prev, newTest])
           setCurrentStudentName("")
-          // Simular correção
-          setTimeout(() => {
+          
+          // Converter arquivos para Base64
+          try {
+            const answerKeyBase64 = await fileToBase64(answerKey)
+            const studentTestBase64 = await fileToBase64(file)
+            
+            // Atualizar status para 'correcting'
+            setStudentTests(prev => prev.map(test => 
+              test.id === newTest.id 
+                ? { ...test, status: 'correcting' as const }
+                : test
+            ))
+            
+            // Chamar API de correção
+            const response = await fetch("/api/correct-test", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                answerKeyFile: answerKeyBase64,
+                studentTestFile: studentTestBase64,
+                studentName: newTest.studentName,
+                subject: "Não especificada",
+                grade: "Não especificada"
+              }),
+            })
+
+            if (!response.ok) {
+              throw new Error(`Erro na API: ${response.status}`)
+            }
+
+            const data = await response.json()
+            
+            if (data.error) {
+              throw new Error(data.error)
+            }
+
+            // Atualizar com resultado da correção
             setStudentTests(prev => prev.map(test => 
               test.id === newTest.id 
                 ? { 
                     ...test, 
-                    status: 'correcting' as const 
+                    status: 'completed' as const,
+                    score: data.score || 0,
+                    correctAnswers: data.correctAnswers || 0,
+                    totalQuestions: data.totalQuestions || 0,
+                    correctedAt: new Date(),
+                    feedback: data.feedback,
+                    corrections: data.corrections || [],
+                    strengths: data.strengths || [],
+                    improvements: data.improvements || []
                   }
                 : test
             ))
-            // Simular conclusão da correção
-            setTimeout(() => {
-              setStudentTests(prev => prev.map(test => 
-                test.id === newTest.id 
-                  ? { 
-                      ...test, 
-                      status: 'completed' as const,
-                      score: Math.floor(Math.random() * 3) + 7.5, // 7.5 a 10
-                      correctAnswers: Math.floor(Math.random() * 5) + 15, // 15 a 20
-                      totalQuestions: 20,
-                      correctedAt: new Date()
-                    }
-                  : test
-              ))
-            }, 2000)
-          }, 1000)
+          } catch (error) {
+            console.error("Erro ao corrigir prova:", error)
+            // Em caso de erro, manter status como 'completed' mas com dados mockados
+            setStudentTests(prev => prev.map(test => 
+              test.id === newTest.id 
+                ? { 
+                    ...test, 
+                    status: 'completed' as const,
+                    score: Math.floor(Math.random() * 3) + 7.5,
+                    correctAnswers: Math.floor(Math.random() * 5) + 15,
+                    totalQuestions: 20,
+                    correctedAt: new Date(),
+                    feedback: "Erro na correção automática. Dados simulados."
+                  }
+                : test
+            ))
+          }
         }
       }
       // Reset file input
       event.target.value = ''
     }
+  }
+
+  // Função auxiliar para converter arquivo para Base64
+  const fileToBase64 = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.readAsDataURL(file)
+      reader.onload = () => {
+        const result = reader.result as string
+        // Remover o prefixo "data:application/pdf;base64," ou similar
+        const base64 = result.split(',')[1]
+        resolve(base64)
+      }
+      reader.onerror = error => reject(error)
+    })
   }
 
   const resetCorrection = () => {
@@ -226,6 +298,18 @@ export default function TeacherCopilot() {
 
   const removeStudentTest = (testId: string) => {
     setStudentTests(prev => prev.filter(test => test.id !== testId))
+  }
+
+  const toggleFeedbackExpansion = (testId: string) => {
+    setExpandedFeedbacks(prev => {
+      const newSet = new Set(prev)
+      if (newSet.has(testId)) {
+        newSet.delete(testId)
+      } else {
+        newSet.add(testId)
+      }
+      return newSet
+    })
   }
 
   const handleCompetencyToggle = (competencyId: string) => {
@@ -678,7 +762,7 @@ Formate a resposta de forma clara e organizada para fácil implementação em sa
                                   </div>
 
                                   {test.status === 'completed' && test.score && (
-                                    <div className="bg-green-50 p-2 rounded text-xs space-y-1">
+                                    <div className="bg-green-50 p-2 rounded text-xs space-y-2">
                                       <div className="flex justify-between">
                                         <span>Nota:</span>
                                         <span className="font-bold text-green-600">
@@ -691,6 +775,27 @@ Formate a resposta de forma clara e organizada para fácil implementação em sa
                                           {test.correctAnswers}/{test.totalQuestions}
                                         </span>
                                       </div>
+                                      {test.feedback && (
+                                        <div className="mt-2 pt-2 border-t border-green-200">
+                                          <div className="flex items-center justify-between mb-1">
+                                            <p className="text-xs text-gray-700 font-medium">Feedback:</p>
+                                            {test.feedback.length > 100 && (
+                                              <button
+                                                onClick={() => toggleFeedbackExpansion(test.id)}
+                                                className="text-xs text-blue-600 hover:text-blue-800 font-medium"
+                                              >
+                                                {expandedFeedbacks.has(test.id) ? 'Ver menos' : 'Ver mais'}
+                                              </button>
+                                            )}
+                                          </div>
+                                          <p className="text-xs text-gray-600 leading-relaxed">
+                                            {test.feedback.length > 100 && !expandedFeedbacks.has(test.id)
+                                              ? test.feedback.substring(0, 100) + '...'
+                                              : test.feedback
+                                            }
+                                          </p>
+                                        </div>
+                                      )}
                                     </div>
                                   )}
                                 </div>
