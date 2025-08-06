@@ -31,6 +31,26 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Checkbox } from "@/components/ui/checkbox"
+import { MarkdownMessage } from "@/components/ui/markdown-message"
+
+// Component to handle timestamp rendering client-side only
+function Timestamp({ date }: { date: Date }) {
+  const [mounted, setMounted] = useState(false)
+
+  useEffect(() => {
+    setMounted(true)
+  }, [])
+
+  if (!mounted) {
+    return <span className="text-xs text-gray-500">...</span>
+  }
+
+  return (
+    <span className="text-xs text-gray-500">
+      {date.toLocaleTimeString()}
+    </span>
+  )
+}
 
 export default function TeacherCopilot() {
   const [messages, setMessages] = useState([
@@ -38,16 +58,33 @@ export default function TeacherCopilot() {
       id: 1,
       type: "ai" as const,
       content: "Olá! Sou seu assistente de IA para educação. Como posso ajudá-lo hoje?",
-      timestamp: new Date(Date.now() - 1000 * 60 * 5),
+      timestamp: new Date("2024-01-15T15:00:00.000Z"), // Static timestamp to avoid hydration issues
     },
   ])
   const [inputMessage, setInputMessage] = useState("")
   const [isLoading, setIsLoading] = useState(false)
   const [selectedCompetencies, setSelectedCompetencies] = useState<string[]>([])
   const [answerKey, setAnswerKey] = useState<File | null>(null)
-  const [studentTest, setStudentTest] = useState<File | null>(null)
+  const [studentTests, setStudentTests] = useState<Array<{
+    id: string
+    file: File
+    studentName: string
+    status: 'pending' | 'correcting' | 'completed'
+    score?: number
+    correctAnswers?: number
+    totalQuestions?: number
+    correctedAt?: Date
+  }>>([])
+  const [currentStudentName, setCurrentStudentName] = useState("")
   const [correctionStep, setCorrectionStep] = useState(1)
-  const [showValidation, setShowValidation] = useState(false)
+  const [lessonPlan, setLessonPlan] = useState("")
+  const [isGeneratingPlan, setIsGeneratingPlan] = useState(false)
+  const [planFormData, setPlanFormData] = useState({
+    subject: "",
+    grade: "",
+    topic: "",
+    duration: ""
+  })
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const studentFileInputRef = useRef<HTMLInputElement>(null)
@@ -68,8 +105,13 @@ export default function TeacherCopilot() {
   }
 
   useEffect(() => {
-    scrollToBottom()
-  }, [messages])
+    // Scroll para baixo apenas quando uma nova mensagem é adicionada
+    const timeoutId = setTimeout(() => {
+      scrollToBottom()
+    }, 100) // Pequeno delay para garantir que o DOM foi atualizado
+    
+    return () => clearTimeout(timeoutId)
+  }, [messages.length]) // Monitora apenas o comprimento do array, não o conteúdo
 
   const handleSendMessage = async () => {
     if (!inputMessage.trim()) return
@@ -85,28 +127,50 @@ export default function TeacherCopilot() {
     setInputMessage("")
     setIsLoading(true)
 
-    // Simular resposta da IA
-    setTimeout(() => {
+    try {
+      // Chamar a API do Gemini
+      const response = await fetch("/api/ai-chat", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          messages: messages,
+          userInput: inputMessage,
+          context: "teacher" // Adicionar contexto para diferenciação
+        }),
+      })
+
+      if (!response.ok) {
+        throw new Error(`Erro na API: ${response.status}`)
+      }
+
+      const data = await response.json()
+      
+      if (data.error) {
+        throw new Error(data.error)
+      }
+
       const aiResponse = {
         id: messages.length + 2,
         type: "ai" as const,
-        content: generateAIResponse(inputMessage),
+        content: data.response,
         timestamp: new Date(),
       }
+      
       setMessages((prev) => [...prev, aiResponse])
+    } catch (error) {
+      console.error("Erro ao processar mensagem:", error)
+      const errorMessage = {
+        id: messages.length + 2,
+        type: "ai" as const,
+        content: "Desculpe, estou enfrentando dificuldades técnicas no momento. Pode tentar novamente em alguns instantes?",
+        timestamp: new Date(),
+      }
+      setMessages((prev) => [...prev, errorMessage])
+    } finally {
       setIsLoading(false)
-    }, 1500)
-  }
-
-  const generateAIResponse = (input: string) => {
-    const responses = [
-      "Baseado na sua pergunta, sugiro focar nos seguintes aspectos pedagógicos...",
-      "Para melhorar o engajamento dos alunos, você pode tentar estas estratégias...",
-      "Analisando os dados da turma, identifiquei algumas oportunidades de melhoria...",
-      "Aqui estão algumas atividades personalizadas para seus alunos...",
-      "Com base nas competências selecionadas, recomendo este plano de aula...",
-    ]
-    return responses[Math.floor(Math.random() * responses.length)]
+    }
   }
 
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>, type: "answer" | "student") => {
@@ -116,20 +180,57 @@ export default function TeacherCopilot() {
         setAnswerKey(file)
         setCorrectionStep(2)
       } else {
-        setStudentTest(file)
-        if (answerKey) {
-          setCorrectionStep(3)
-          setShowValidation(true)
+        if (currentStudentName.trim() && answerKey) {
+          const newTest = {
+            id: Date.now().toString(),
+            file,
+            studentName: currentStudentName.trim(),
+            status: 'pending' as const
+          }
+          setStudentTests(prev => [...prev, newTest])
+          setCurrentStudentName("")
+          // Simular correção
+          setTimeout(() => {
+            setStudentTests(prev => prev.map(test => 
+              test.id === newTest.id 
+                ? { 
+                    ...test, 
+                    status: 'correcting' as const 
+                  }
+                : test
+            ))
+            // Simular conclusão da correção
+            setTimeout(() => {
+              setStudentTests(prev => prev.map(test => 
+                test.id === newTest.id 
+                  ? { 
+                      ...test, 
+                      status: 'completed' as const,
+                      score: Math.floor(Math.random() * 3) + 7.5, // 7.5 a 10
+                      correctAnswers: Math.floor(Math.random() * 5) + 15, // 15 a 20
+                      totalQuestions: 20,
+                      correctedAt: new Date()
+                    }
+                  : test
+              ))
+            }, 2000)
+          }, 1000)
         }
       }
+      // Reset file input
+      event.target.value = ''
     }
   }
 
   const resetCorrection = () => {
     setAnswerKey(null)
-    setStudentTest(null)
+    setStudentTests([])
+    setCurrentStudentName("")
     setCorrectionStep(1)
-    setShowValidation(false)
+  }
+
+  const removeStudentTest = (testId: string) => {
+    setStudentTests(prev => prev.filter(test => test.id !== testId))
   }
 
   const handleCompetencyToggle = (competencyId: string) => {
@@ -138,11 +239,73 @@ export default function TeacherCopilot() {
     )
   }
 
+  const generateLessonPlan = async () => {
+    if (!planFormData.subject || !planFormData.grade || !planFormData.topic || !planFormData.duration) {
+      return
+    }
+
+    setIsGeneratingPlan(true)
+    
+    const competenciesText = selectedCompetencies.length > 0 
+      ? competencies.filter(c => selectedCompetencies.includes(c.id)).map(c => c.name).join(", ")
+      : "Não especificadas"
+
+    const prompt = `Crie um plano de aula detalhado com as seguintes especificações:
+
+**Disciplina:** ${planFormData.subject}
+**Série:** ${planFormData.grade}
+**Tema:** ${planFormData.topic}
+**Duração:** ${planFormData.duration} minutos
+**Competências a desenvolver:** ${competenciesText}
+
+O plano deve incluir:
+1. Objetivos de aprendizagem
+2. Conteúdos a serem abordados
+3. Metodologia e estratégias pedagógicas
+4. Recursos necessários
+5. Avaliação
+6. Cronograma da aula
+7. Atividades práticas
+
+Formate a resposta de forma clara e organizada para fácil implementação em sala de aula.`
+
+    try {
+      const response = await fetch("/api/ai-chat", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          messages: [],
+          userInput: prompt,
+          context: "teacher"
+        }),
+      })
+
+      if (!response.ok) {
+        throw new Error(`Erro na API: ${response.status}`)
+      }
+
+      const data = await response.json()
+      
+      if (data.error) {
+        throw new Error(data.error)
+      }
+
+      setLessonPlan(data.response)
+    } catch (error) {
+      console.error("Erro ao gerar plano de aula:", error)
+      setLessonPlan("Erro ao gerar plano de aula. Tente novamente.")
+    } finally {
+      setIsGeneratingPlan(false)
+    }
+  }
+
   return (
     <div className="min-h-screen flex flex-col bg-gradient-to-br from-blue-50 to-indigo-100 font-roboto">
       {/* Header */}
       <header className="bg-white shadow-sm border-b">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="mx-auto px-4 sm:px-6 lg:px-8 xl:px-12 2xl:px-16 max-w-[1600px]">
           <div className="flex justify-between items-center h-16">
             <div className="flex items-center space-x-4">
               <div className="flex items-center space-x-2">
@@ -170,40 +333,76 @@ export default function TeacherCopilot() {
       </header>
 
       {/* Main Content */}
-      <main className="flex-1 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <main className="flex-1 mx-auto px-4 sm:px-6 lg:px-8 xl:px-12 2xl:px-16 py-8 max-w-[1600px]">
         {/* Stats Cards at Top */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-          <Card>
+        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-8">
+          <Card className="lg:col-span-1">
             <CardContent className="p-4">
-              <div className="flex items-center space-x-2">
-                <Users className="h-5 w-5 text-blue-600" />
-                <div>
-                  <p className="text-sm font-medium text-gray-600">Alunos Ativos</p>
-                  <p className="text-2xl font-bold text-gray-900">156</p>
+              <div className="flex items-center space-x-3">
+                <Users className="h-5 w-5 text-blue-600 flex-shrink-0" />
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium text-gray-600 leading-tight">Alunos Ativos</p>
+                  <p className="text-2xl font-bold text-gray-900 leading-tight mt-1">156</p>
                 </div>
               </div>
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="lg:col-span-1">
             <CardContent className="p-4">
-              <div className="flex items-center space-x-2">
-                <TrendingUp className="h-5 w-5 text-green-600" />
-                <div>
-                  <p className="text-sm font-medium text-gray-600">Média Geral</p>
-                  <p className="text-2xl font-bold text-gray-900">8.4</p>
+              <div className="flex items-center space-x-3">
+                <TrendingUp className="h-5 w-5 text-green-600 flex-shrink-0" />
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium text-gray-600 leading-tight">Média Geral</p>
+                  <p className="text-2xl font-bold text-gray-900 leading-tight mt-1">8.4</p>
                 </div>
               </div>
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="lg:col-span-1">
             <CardContent className="p-4">
-              <div className="flex items-center space-x-2">
-                <Clock className="h-5 w-5 text-orange-600" />
-                <div>
-                  <p className="text-sm font-medium text-gray-600">Horas Economizadas</p>
-                  <p className="text-2xl font-bold text-gray-900">24h</p>
+              <div className="flex items-center space-x-3">
+                <Clock className="h-5 w-5 text-orange-600 flex-shrink-0" />
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium text-gray-600 leading-tight">Horas<br/>Economizadas</p>
+                  <p className="text-2xl font-bold text-gray-900 leading-tight mt-1">24h</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="lg:col-span-1">
+            <CardContent className="p-4">
+              <div className="flex items-center space-x-3">
+                <CheckCircle className="h-5 w-5 text-emerald-600 flex-shrink-0" />
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium text-gray-600 leading-tight">Atividades<br/>Corrigidas</p>
+                  <p className="text-2xl font-bold text-gray-900 leading-tight mt-1">342</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="lg:col-span-1">
+            <CardContent className="p-4">
+              <div className="flex items-center space-x-3">
+                <MessageSquare className="h-5 w-5 text-purple-600 flex-shrink-0" />
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium text-gray-600 leading-tight">Interações IA</p>
+                  <p className="text-2xl font-bold text-gray-900 leading-tight mt-1">1.2k</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="lg:col-span-1">
+            <CardContent className="p-4">
+              <div className="flex items-center space-x-3">
+                <Activity className="h-5 w-5 text-red-600 flex-shrink-0" />
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium text-gray-600 leading-tight">Taxa Engajamento</p>
+                  <p className="text-2xl font-bold text-gray-900 leading-tight mt-1">94%</p>
                 </div>
               </div>
             </CardContent>
@@ -211,9 +410,11 @@ export default function TeacherCopilot() {
         </div>
 
         {/* Main Content Area */}
-        <div>
-          <Tabs defaultValue="chat" className="space-y-6">
-            <TabsList className="grid w-full grid-cols-4">
+        <div className="grid grid-cols-1 xl:grid-cols-12 gap-8 min-h-0">
+          {/* Main Chat/Content Area */}
+          <div className="xl:col-span-8 min-h-0">
+            <Tabs defaultValue="chat" className="space-y-6 flex flex-col min-h-0">
+              <TabsList className="grid w-full grid-cols-4">
               <TabsTrigger value="chat" className="font-medium">
                 Chat IA
               </TabsTrigger>
@@ -229,9 +430,9 @@ export default function TeacherCopilot() {
             </TabsList>
 
             {/* Chat Tab */}
-            <TabsContent value="chat">
-              <Card className="h-[600px] flex flex-col">
-                <CardHeader className="pb-3">
+            <TabsContent value="chat" className="flex-1 min-h-0">
+              <Card className="flex flex-col h-full min-h-[500px]">
+                <CardHeader className="pb-3 flex-shrink-0">
                   <CardTitle className="font-bold flex items-center gap-2">
                     <MessageSquare className="h-5 w-5 text-blue-600" />
                     Assistente IA
@@ -241,59 +442,76 @@ export default function TeacherCopilot() {
                   </CardDescription>
                 </CardHeader>
 
-                <CardContent className="flex-1 flex flex-col p-0">
-                  <ScrollArea className="flex-1 p-4">
-                    <div className="space-y-4">
-                      {messages.map((message) => (
-                        <div
-                          key={message.id}
-                          className={`flex ${message.type === "user" ? "justify-end" : "justify-start"}`}
-                        >
+                <CardContent className="flex-1 flex flex-col p-0 min-h-0">
+                  <div className="flex-1 overflow-hidden">
+                    <ScrollArea className="h-full p-4">
+                      <div className="space-y-4 min-h-0">
+                        {messages.map((message) => (
                           <div
-                            className={`max-w-[80%] rounded-lg p-3 ${
-                              message.type === "user" ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-900"
-                            }`}
+                            key={message.id}
+                            className={`flex ${message.type === "user" ? "justify-end" : "justify-start"}`}
                           >
-                            <p className="text-sm font-normal">{message.content}</p>
-                            <p
-                              className={`text-xs mt-1 ${message.type === "user" ? "text-blue-100" : "text-gray-500"}`}
+                            <div
+                              className={`max-w-[85%] rounded-lg p-4 ${
+                                message.type === "user" 
+                                  ? "bg-blue-600 text-white" 
+                                  : "bg-gray-50 text-gray-900 border border-gray-200"
+                              }`}
                             >
-                              {message.timestamp.toLocaleTimeString()}
-                            </p>
-                          </div>
-                        </div>
-                      ))}
-                      {isLoading && (
-                        <div className="flex justify-start">
-                          <div className="bg-gray-100 rounded-lg p-3">
-                            <div className="flex space-x-1">
-                              <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
-                              <div
-                                className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"
-                                style={{ animationDelay: "0.1s" }}
-                              ></div>
-                              <div
-                                className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"
-                                style={{ animationDelay: "0.2s" }}
-                              ></div>
+                              {message.type === "user" ? (
+                                <p className="text-sm font-normal whitespace-pre-wrap break-words">{message.content}</p>
+                              ) : (
+                                <div className="prose prose-sm max-w-none">
+                                  <MarkdownMessage 
+                                    content={message.content} 
+                                    className="text-gray-800 leading-relaxed"
+                                  />
+                                </div>
+                              )}
+                              <p
+                                className={`text-xs mt-2 ${message.type === "user" ? "text-blue-100" : "text-gray-500"}`}
+                              >
+                                <Timestamp date={message.timestamp} />
+                              </p>
                             </div>
                           </div>
-                        </div>
-                      )}
-                      <div ref={messagesEndRef} />
-                    </div>
-                  </ScrollArea>
+                        ))}
+                        {isLoading && (
+                          <div className="flex justify-start">
+                            <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 max-w-[85%]">
+                              <div className="flex items-center space-x-2">
+                                <div className="flex space-x-1">
+                                  <div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce"></div>
+                                  <div
+                                    className="w-2 h-2 bg-blue-400 rounded-full animate-bounce"
+                                    style={{ animationDelay: "0.1s" }}
+                                  ></div>
+                                  <div
+                                    className="w-2 h-2 bg-blue-400 rounded-full animate-bounce"
+                                    style={{ animationDelay: "0.2s" }}
+                                  ></div>
+                                </div>
+                                <span className="text-sm text-gray-600 font-medium">IA está pensando...</span>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                        <div ref={messagesEndRef} />
+                      </div>
+                    </ScrollArea>
+                  </div>
 
-                  <div className="p-4 border-t">
+                  <div className="p-4 border-t flex-shrink-0 bg-white">
                     <div className="flex space-x-2">
                       <Input
                         value={inputMessage}
                         onChange={(e) => setInputMessage(e.target.value)}
                         placeholder="Digite sua pergunta..."
                         onKeyPress={(e) => e.key === "Enter" && handleSendMessage()}
-                        className="font-normal"
+                        className="font-normal flex-1"
+                        disabled={isLoading}
                       />
-                      <Button onClick={handleSendMessage} disabled={isLoading}>
+                      <Button onClick={handleSendMessage} disabled={isLoading} className="flex-shrink-0">
                         <Send className="h-4 w-4" />
                       </Button>
                     </div>
@@ -304,168 +522,198 @@ export default function TeacherCopilot() {
 
             {/* Correction Tab */}
             <TabsContent value="correction">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="font-bold flex items-center gap-2">
-                    <ClipboardCheck className="h-5 w-5 text-blue-600" />
-                    Correção Automática de Provas
-                  </CardTitle>
-                  <CardDescription className="font-normal">
-                    Upload do gabarito e provas dos alunos para correção automática
-                  </CardDescription>
-                </CardHeader>
+              <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+                {/* Upload Section */}
+                <div className="xl:col-span-2 space-y-6">
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="font-bold flex items-center gap-2">
+                        <ClipboardCheck className="h-5 w-5 text-blue-600" />
+                        Correção Automática de Provas
+                      </CardTitle>
+                      <CardDescription className="font-normal">
+                        Upload do gabarito e provas dos alunos para correção automática
+                      </CardDescription>
+                    </CardHeader>
 
-                <CardContent className="space-y-6">
-                  {/* Progress Steps */}
-                  <div className="flex items-center space-x-4">
-                    <div
-                      className={`flex items-center space-x-2 ${correctionStep >= 1 ? "text-blue-600" : "text-gray-400"}`}
-                    >
-                      <div
-                        className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${correctionStep >= 1 ? "bg-blue-600 text-white" : "bg-gray-200"}`}
-                      >
-                        1
-                      </div>
-                      <span className="font-medium">Gabarito</span>
-                    </div>
-                    <div className={`w-8 h-0.5 ${correctionStep >= 2 ? "bg-blue-600" : "bg-gray-200"}`}></div>
-                    <div
-                      className={`flex items-center space-x-2 ${correctionStep >= 2 ? "text-blue-600" : "text-gray-400"}`}
-                    >
-                      <div
-                        className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${correctionStep >= 2 ? "bg-blue-600 text-white" : "bg-gray-200"}`}
-                      >
-                        2
-                      </div>
-                      <span className="font-medium">Prova do Aluno</span>
-                    </div>
-                    <div className={`w-8 h-0.5 ${correctionStep >= 3 ? "bg-blue-600" : "bg-gray-200"}`}></div>
-                    <div
-                      className={`flex items-center space-x-2 ${correctionStep >= 3 ? "text-blue-600" : "text-gray-400"}`}
-                    >
-                      <div
-                        className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${correctionStep >= 3 ? "bg-blue-600 text-white" : "bg-gray-200"}`}
-                      >
-                        3
-                      </div>
-                      <span className="font-medium">Resultado</span>
-                    </div>
-                  </div>
-
-                  {/* Step 1: Answer Key Upload */}
-                  <div className="space-y-4">
-                    <div>
-                      <Label htmlFor="answer-key" className="text-sm font-medium">
-                        1. Upload do Gabarito
-                      </Label>
-                      <div className="mt-2">
-                        <input
-                          ref={fileInputRef}
-                          type="file"
-                          id="answer-key"
-                          accept=".pdf,.jpg,.jpeg,.png"
-                          onChange={(e) => handleFileUpload(e, "answer")}
-                          className="hidden"
-                        />
-                        <Button
-                          variant="outline"
-                          onClick={() => fileInputRef.current?.click()}
-                          className="w-full h-20 border-dashed font-medium"
-                          disabled={!!answerKey}
-                        >
-                          {answerKey ? (
-                            <div className="flex items-center space-x-2">
-                              <CheckCircle className="h-5 w-5 text-green-600" />
-                              <span>Gabarito carregado: {answerKey.name}</span>
-                            </div>
-                          ) : (
-                            <div className="flex flex-col items-center space-y-2">
-                              <Upload className="h-6 w-6" />
-                              <span>Clique para fazer upload do gabarito</span>
-                            </div>
-                          )}
-                        </Button>
-                      </div>
-                    </div>
-
-                    {/* Step 2: Student Test Upload */}
-                    {answerKey && (
+                    <CardContent className="space-y-6">
+                      {/* Step 1: Answer Key Upload */}
                       <div>
-                        <Label htmlFor="student-test" className="text-sm font-medium">
-                          2. Upload da Prova do Aluno
+                        <Label htmlFor="answer-key" className="text-sm font-medium">
+                          1. Upload do Gabarito
                         </Label>
                         <div className="mt-2">
                           <input
-                            ref={studentFileInputRef}
+                            ref={fileInputRef}
                             type="file"
-                            id="student-test"
+                            id="answer-key"
                             accept=".pdf,.jpg,.jpeg,.png"
-                            onChange={(e) => handleFileUpload(e, "student")}
+                            onChange={(e) => handleFileUpload(e, "answer")}
                             className="hidden"
                           />
                           <Button
                             variant="outline"
-                            onClick={() => studentFileInputRef.current?.click()}
+                            onClick={() => fileInputRef.current?.click()}
                             className="w-full h-20 border-dashed font-medium"
-                            disabled={!!studentTest}
+                            disabled={!!answerKey}
                           >
-                            {studentTest ? (
+                            {answerKey ? (
                               <div className="flex items-center space-x-2">
                                 <CheckCircle className="h-5 w-5 text-green-600" />
-                                <span>Prova carregada: {studentTest.name}</span>
+                                <span>Gabarito carregado: {answerKey.name}</span>
                               </div>
                             ) : (
                               <div className="flex flex-col items-center space-y-2">
                                 <Upload className="h-6 w-6" />
-                                <span>Clique para fazer upload da prova</span>
+                                <span>Clique para fazer upload do gabarito</span>
                               </div>
                             )}
                           </Button>
                         </div>
                       </div>
-                    )}
 
-                    {/* Step 3: Results */}
-                    {showValidation && answerKey && studentTest && (
-                      <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                        <div className="flex items-center space-x-2 mb-3">
-                          <CheckCircle className="h-5 w-5 text-green-600" />
-                          <h3 className="font-bold text-green-800">Correção Concluída</h3>
-                        </div>
-                        <div className="grid grid-cols-2 gap-4 text-sm">
-                          <div>
-                            <p className="font-medium text-gray-700">Nota Final:</p>
-                            <p className="text-2xl font-bold text-green-600">8.5/10</p>
+                      {/* Step 2: Student Test Upload */}
+                      {answerKey && (
+                        <div>
+                          <Label htmlFor="student-name" className="text-sm font-medium">
+                            2. Nome do Aluno e Upload da Prova
+                          </Label>
+                          <div className="mt-2 space-y-3">
+                            <Input
+                              id="student-name"
+                              placeholder="Digite o nome do aluno"
+                              value={currentStudentName}
+                              onChange={(e) => setCurrentStudentName(e.target.value)}
+                              className="font-normal"
+                            />
+                            <input
+                              ref={studentFileInputRef}
+                              type="file"
+                              id="student-test"
+                              accept=".pdf,.jpg,.jpeg,.png"
+                              onChange={(e) => handleFileUpload(e, "student")}
+                              className="hidden"
+                            />
+                            <Button
+                              variant="outline"
+                              onClick={() => studentFileInputRef.current?.click()}
+                              className="w-full h-16 border-dashed font-medium"
+                              disabled={!currentStudentName.trim()}
+                            >
+                              <div className="flex flex-col items-center space-y-2">
+                                <Upload className="h-5 w-5" />
+                                <span>
+                                  {currentStudentName.trim() 
+                                    ? `Upload da prova de ${currentStudentName}` 
+                                    : "Digite o nome do aluno primeiro"
+                                  }
+                                </span>
+                              </div>
+                            </Button>
                           </div>
-                          <div>
-                            <p className="font-medium text-gray-700">Acertos:</p>
-                            <p className="text-2xl font-bold text-blue-600">17/20</p>
-                          </div>
                         </div>
-                        <div className="mt-4 flex space-x-2">
-                          <Button size="sm" className="font-medium">
-                            <Download className="h-4 w-4 mr-2" />
-                            Baixar Relatório
-                          </Button>
+                      )}
+
+                      {/* Reset Button */}
+                      {(answerKey || studentTests.length > 0) && (
+                        <div className="pt-4 border-t">
                           <Button
                             variant="outline"
-                            size="sm"
                             onClick={resetCorrection}
-                            className="font-medium bg-transparent"
+                            className="font-medium"
                           >
-                            Nova Correção
+                            Reiniciar Correção
                           </Button>
                         </div>
-                      </div>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
+                      )}
+                    </CardContent>
+                  </Card>
+                </div>
+
+                {/* Results Section */}
+                <div className="space-y-4">
+                  <Card>
+                    <CardHeader className="pb-3">
+                      <CardTitle className="font-bold text-lg">Provas Enviadas</CardTitle>
+                      <CardDescription className="font-normal">
+                        {studentTests.length} {studentTests.length === 1 ? 'prova' : 'provas'} na fila
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      {studentTests.length === 0 ? (
+                        <div className="text-center py-8">
+                          <ClipboardCheck className="h-12 w-12 text-gray-300 mx-auto mb-3" />
+                          <p className="text-sm text-gray-500 font-medium">
+                            Nenhuma prova enviada ainda
+                          </p>
+                        </div>
+                      ) : (
+                        <ScrollArea className="h-[600px]">
+                          <div className="space-y-3">
+                            {studentTests.map((test) => (
+                              <div
+                                key={test.id}
+                                className="p-3 border rounded-lg bg-white shadow-sm"
+                              >
+                                <div className="flex items-center justify-between mb-2">
+                                  <h4 className="font-medium text-sm">{test.studentName}</h4>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => removeStudentTest(test.id)}
+                                    className="h-6 w-6 p-0 text-gray-400 hover:text-red-500"
+                                  >
+                                    ×
+                                  </Button>
+                                </div>
+                                
+                                <div className="space-y-2">
+                                  <div className="flex items-center space-x-2 text-xs">
+                                    <div
+                                      className={`w-2 h-2 rounded-full ${
+                                        test.status === 'pending' ? 'bg-yellow-500' :
+                                        test.status === 'correcting' ? 'bg-blue-500 animate-pulse' :
+                                        'bg-green-500'
+                                      }`}
+                                    />
+                                    <span className="font-medium">
+                                      {test.status === 'pending' ? 'Aguardando' :
+                                       test.status === 'correcting' ? 'Corrigindo...' :
+                                       'Concluída'}
+                                    </span>
+                                  </div>
+
+                                  {test.status === 'completed' && test.score && (
+                                    <div className="bg-green-50 p-2 rounded text-xs space-y-1">
+                                      <div className="flex justify-between">
+                                        <span>Nota:</span>
+                                        <span className="font-bold text-green-600">
+                                          {test.score.toFixed(1)}/10
+                                        </span>
+                                      </div>
+                                      <div className="flex justify-between">
+                                        <span>Acertos:</span>
+                                        <span className="font-bold text-blue-600">
+                                          {test.correctAnswers}/{test.totalQuestions}
+                                        </span>
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </ScrollArea>
+                      )}
+                    </CardContent>
+                  </Card>
+                </div>
+              </div>
             </TabsContent>
 
             {/* Analytics Tab */}
             <TabsContent value="analytics">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
                 <Card>
                   <CardHeader>
                     <CardTitle className="font-bold flex items-center gap-2">
@@ -524,64 +772,109 @@ export default function TeacherCopilot() {
                     </div>
                   </CardContent>
                 </Card>
+
+                {/* Additional Analytics Card for larger screens */}
+                <Card className="xl:block hidden">
+                  <CardHeader>
+                    <CardTitle className="font-bold flex items-center gap-2">
+                      <TrendingUp className="h-5 w-5 text-purple-600" />
+                      Tendências
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-4">
+                      <div className="text-center">
+                        <div className="text-2xl font-black text-purple-600 mb-1">+12%</div>
+                        <p className="text-sm font-medium text-gray-600">Melhoria Geral</p>
+                      </div>
+                      <div className="grid grid-cols-1 gap-3 text-sm">
+                        <div className="flex justify-between">
+                          <span className="font-medium text-gray-700">Esta Semana</span>
+                          <span className="font-bold text-green-600">+5%</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="font-medium text-gray-700">Este Mês</span>
+                          <span className="font-bold text-blue-600">+8%</span>
+                        </div>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
               </div>
             </TabsContent>
 
             {/* Planning Tab */}
             <TabsContent value="planning">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="font-bold flex items-center gap-2">
-                    <Calendar className="h-5 w-5 text-blue-600" />
-                    Planejamento de Aulas
-                  </CardTitle>
-                  <CardDescription className="font-normal">Crie planos de aula personalizados com IA</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+                {/* Form Section */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="font-bold flex items-center gap-2">
+                      <Calendar className="h-5 w-5 text-blue-600" />
+                      Planejamento de Aulas
+                    </CardTitle>
+                    <CardDescription className="font-normal">Crie planos de aula personalizados com IA</CardDescription>
+                  </CardHeader>
+                  <CardContent>
                     <div className="space-y-4">
                       <div>
                         <Label className="font-medium">Disciplina</Label>
-                        <Select>
+                        <Select value={planFormData.subject} onValueChange={(value) => setPlanFormData(prev => ({...prev, subject: value}))}>
                           <SelectTrigger>
                             <SelectValue placeholder="Selecione a disciplina" />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="math">Matemática</SelectItem>
-                            <SelectItem value="portuguese">Português</SelectItem>
-                            <SelectItem value="science">Ciências</SelectItem>
-                            <SelectItem value="history">História</SelectItem>
+                            <SelectItem value="Matemática">Matemática</SelectItem>
+                            <SelectItem value="Português">Português</SelectItem>
+                            <SelectItem value="Ciências">Ciências</SelectItem>
+                            <SelectItem value="História">História</SelectItem>
+                            <SelectItem value="Geografia">Geografia</SelectItem>
+                            <SelectItem value="Inglês">Inglês</SelectItem>
+                            <SelectItem value="Educação Física">Educação Física</SelectItem>
+                            <SelectItem value="Arte">Arte</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
                       <div>
                         <Label className="font-medium">Série</Label>
-                        <Select>
+                        <Select value={planFormData.grade} onValueChange={(value) => setPlanFormData(prev => ({...prev, grade: value}))}>
                           <SelectTrigger>
                             <SelectValue placeholder="Selecione a série" />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="6">6º Ano</SelectItem>
-                            <SelectItem value="7">7º Ano</SelectItem>
-                            <SelectItem value="8">8º Ano</SelectItem>
-                            <SelectItem value="9">9º Ano</SelectItem>
+                            <SelectItem value="6º Ano">6º Ano</SelectItem>
+                            <SelectItem value="7º Ano">7º Ano</SelectItem>
+                            <SelectItem value="8º Ano">8º Ano</SelectItem>
+                            <SelectItem value="9º Ano">9º Ano</SelectItem>
+                            <SelectItem value="1º Ano EM">1º Ano EM</SelectItem>
+                            <SelectItem value="2º Ano EM">2º Ano EM</SelectItem>
+                            <SelectItem value="3º Ano EM">3º Ano EM</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
                       <div>
                         <Label className="font-medium">Tema da Aula</Label>
-                        <Input placeholder="Ex: Frações e Decimais" className="font-normal" />
+                        <Input 
+                          placeholder="Ex: Frações e Decimais" 
+                          className="font-normal"
+                          value={planFormData.topic}
+                          onChange={(e) => setPlanFormData(prev => ({...prev, topic: e.target.value}))}
+                        />
                       </div>
                       <div>
                         <Label className="font-medium">Duração (minutos)</Label>
-                        <Input type="number" placeholder="50" className="font-normal" />
+                        <Input 
+                          type="number" 
+                          placeholder="50" 
+                          className="font-normal"
+                          value={planFormData.duration}
+                          onChange={(e) => setPlanFormData(prev => ({...prev, duration: e.target.value}))}
+                        />
                       </div>
-                    </div>
-                    <div className="space-y-4">
                       <div>
                         <Label className="font-medium">Competências a Desenvolver</Label>
                         <div className="mt-2 space-y-2">
-                          {competencies.slice(0, 4).map((comp) => (
+                          {competencies.slice(0, 6).map((comp) => (
                             <div key={comp.id} className="flex items-center space-x-2">
                               <Checkbox
                                 id={comp.id}
@@ -595,22 +888,156 @@ export default function TeacherCopilot() {
                           ))}
                         </div>
                       </div>
-                      <Button className="w-full font-medium">
-                        <Lightbulb className="h-4 w-4 mr-2" />
-                        Gerar Plano de Aula
+                      <Button 
+                        className="w-full font-medium" 
+                        onClick={generateLessonPlan}
+                        disabled={isGeneratingPlan || !planFormData.subject || !planFormData.grade || !planFormData.topic || !planFormData.duration}
+                      >
+                        {isGeneratingPlan ? (
+                          <>
+                            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                            Gerando Plano...
+                          </>
+                        ) : (
+                          <>
+                            <Lightbulb className="h-4 w-4 mr-2" />
+                            Gerar Plano de Aula
+                          </>
+                        )}
                       </Button>
                     </div>
-                  </div>
-                </CardContent>
-              </Card>
+                  </CardContent>
+                </Card>
+
+                {/* Result Section */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="font-bold text-lg">Plano de Aula Gerado</CardTitle>
+                    <CardDescription className="font-normal">
+                      Resultado da IA baseado nas suas especificações
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    {!lessonPlan ? (
+                      <div className="text-center py-12">
+                        <Calendar className="h-12 w-12 text-gray-300 mx-auto mb-3" />
+                        <p className="text-sm text-gray-500 font-medium">
+                          Preencha o formulário e clique em "Gerar Plano de Aula" para ver o resultado
+                        </p>
+                      </div>
+                    ) : (
+                      <ScrollArea className="h-[600px]">
+                        <div className="prose prose-sm max-w-none">
+                          <MarkdownMessage content={lessonPlan} className="text-gray-800" />
+                        </div>
+                      </ScrollArea>
+                    )}
+                  </CardContent>
+                </Card>
+              </div>
             </TabsContent>
-          </Tabs>
+            </Tabs>
+          </div>
+
+          {/* Sidebar for Desktop */}
+          <div className="xl:col-span-4 space-y-6">
+            {/* Quick Actions */}
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="font-bold text-lg">Ações Rápidas</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <Button className="w-full justify-start font-medium" variant="outline">
+                  <Upload className="h-4 w-4 mr-2" />
+                  Nova Correção
+                </Button>
+                <Button className="w-full justify-start font-medium" variant="outline">
+                  <Calendar className="h-4 w-4 mr-2" />
+                  Criar Plano de Aula
+                </Button>
+                <Button className="w-full justify-start font-medium" variant="outline">
+                  <BarChart3 className="h-4 w-4 mr-2" />
+                  Relatório da Turma
+                </Button>
+                <Button className="w-full justify-start font-medium" variant="outline">
+                  <Lightbulb className="h-4 w-4 mr-2" />
+                  Sugestões IA
+                </Button>
+              </CardContent>
+            </Card>
+
+            {/* Recent Activity */}
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="font-bold text-lg">Atividade Recente</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-3">
+                  <div className="flex items-center space-x-3 p-2 rounded-lg bg-blue-50">
+                    <div className="w-2 h-2 bg-blue-600 rounded-full"></div>
+                    <div className="flex-1">
+                      <p className="text-sm font-medium">Prova de Matemática corrigida</p>
+                      <p className="text-xs text-gray-500">há 2 minutos</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center space-x-3 p-2 rounded-lg bg-green-50">
+                    <div className="w-2 h-2 bg-green-600 rounded-full"></div>
+                    <div className="flex-1">
+                      <p className="text-sm font-medium">Plano de aula gerado</p>
+                      <p className="text-xs text-gray-500">há 15 minutos</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center space-x-3 p-2 rounded-lg bg-purple-50">
+                    <div className="w-2 h-2 bg-purple-600 rounded-full"></div>
+                    <div className="flex-1">
+                      <p className="text-sm font-medium">Chat com IA iniciado</p>
+                      <p className="text-xs text-gray-500">há 1 hora</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center space-x-3 p-2 rounded-lg bg-orange-50">
+                    <div className="w-2 h-2 bg-orange-600 rounded-full"></div>
+                    <div className="flex-1">
+                      <p className="text-sm font-medium">Relatório baixado</p>
+                      <p className="text-xs text-gray-500">há 2 horas</p>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Performance Summary */}
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="font-bold text-lg">Resumo Semanal</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm font-medium">Provas Corrigidas</span>
+                    <span className="text-lg font-bold text-blue-600">23</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm font-medium">Planos Criados</span>
+                    <span className="text-lg font-bold text-green-600">8</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm font-medium">Insights IA</span>
+                    <span className="text-lg font-bold text-purple-600">47</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm font-medium">Tempo Economizado</span>
+                    <span className="text-lg font-bold text-orange-600">12h</span>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
         </div>
       </main>
 
       {/* Footer */}
       <footer className="mt-auto bg-white border-t">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        <div className="mx-auto px-4 sm:px-6 lg:px-8 xl:px-12 2xl:px-16 py-6 max-w-[1600px]">
           <div className="flex flex-col md:flex-row justify-between items-center">
             <div className="flex items-center space-x-2 mb-4 md:mb-0">
               <GraduationCap className="h-6 w-6 text-blue-600" />
