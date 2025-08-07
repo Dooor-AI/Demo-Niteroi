@@ -421,42 +421,8 @@ function EducationalChat() {
     }
     
     if (newFiles.length > 0) {
+      // Apenas anexa os arquivos ao estado atual; não envia mensagem automática
       setUploadedFiles(prev => [...prev, ...newFiles])
-      
-      // Criar mensagem com os arquivos
-      const fileMessage: Message = {
-        id: Date.now(),
-        type: "user",
-        content: `Enviei ${newFiles.length} arquivo(s) para análise: ${newFiles.map(f => f.name).join(', ')}`,
-        timestamp: new Date(),
-        files: newFiles
-      }
-      
-      const newMessages = [...messages, fileMessage]
-      setMessages(newMessages)
-      updateCurrentChat(newMessages)
-      
-      // Processar arquivos com IA
-      setIsLoading(true)
-      try {
-        const fileAnalysis = newFiles.map(file => file.content).join('\n\n')
-        const aiResponse = await aiService.generateResponse(messages, `Analise os seguintes arquivos:\n\n${fileAnalysis}`)
-        
-        const aiMessage: Message = {
-          id: Date.now() + 1,
-          type: "ai",
-          content: aiResponse.content,
-          timestamp: new Date(),
-        }
-        
-        const finalMessages = [...newMessages, aiMessage]
-        setMessages(finalMessages)
-        updateCurrentChat(finalMessages)
-      } catch (error) {
-        setError("Erro ao analisar arquivos. Tente novamente.")
-      } finally {
-        setIsLoading(false)
-      }
     }
   }
 
@@ -496,6 +462,7 @@ function EducationalChat() {
       type: "user",
       content: inputMessage,
       timestamp: new Date(),
+      files: uploadedFiles.length > 0 ? [...uploadedFiles] : undefined,
     }
 
     const newMessages = [...messages, userMessage]
@@ -516,7 +483,11 @@ function EducationalChat() {
     }
 
     try {
-      const aiResponse = await aiService.generateResponse(messages, userMessage.content)
+      const filesContext = uploadedFiles.length > 0
+        ? `\n\n[Arquivos anexados]\n${uploadedFiles.map(f => f.content).join('\n\n')}`
+        : ""
+      const combinedPrompt = `${userMessage.content}${filesContext}`
+      const aiResponse = await aiService.generateResponse(messages, combinedPrompt)
       
       if (aiResponse.error) {
         setError(aiResponse.error)
@@ -534,6 +505,10 @@ function EducationalChat() {
       const finalMessages = [...newMessages, aiMessage]
       setMessages(finalMessages)
       updateCurrentChat(finalMessages)
+      // Limpa os arquivos anexados após o envio bem-sucedido
+      if (uploadedFiles.length > 0) {
+        setUploadedFiles([])
+      }
     } catch (error) {
       console.error("Erro ao processar mensagem:", error)
       setError("Erro ao processar sua mensagem. Tente novamente.")
