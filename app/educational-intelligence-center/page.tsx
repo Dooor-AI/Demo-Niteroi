@@ -621,7 +621,7 @@ function EducationalChat() {
       )}
 
       {/* Messages Area */}
-      <ScrollArea className="h-96 p-4">
+      <ScrollArea className="h-[60vh] md:h-[65vh] lg:h-[70vh] p-4">
         {messages.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full max-w-2xl mx-auto text-center">
             <div className="bg-gradient-to-br from-purple-50 to-blue-50 rounded-3xl p-8 border-2 border-dashed border-purple-200">
@@ -903,64 +903,97 @@ export default function EducationalCenterPage() {
 
       <div className="max-w-7xl mx-auto p-6">
         {/* Dashboard Header */}
-        <div className="mb-8">
-          <h2 className="text-2xl font-bold text-gray-800 mb-2">Dashboard Executivo</h2>
+        <div className="mb-6">
+          <h2 className="text-2xl font-bold text-gray-800 mb-1">Dashboard Executivo</h2>
           <p className="text-gray-600">Visão geral da rede municipal de ensino em tempo real</p>
         </div>
 
-        <main className="grid gap-6 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
-          <MetricCard
-            icon={<Users className="text-blue-500" />}
-            title="Professores Ativos"
-            value="450"
-            description="no Teacher Copilot"
-          />
-          <MetricCard
-            icon={<BookCheck className="text-green-500" />}
-            title="Simulados Realizados"
-            value="1.230"
-            description="no Tutor AI"
-          />
-          <MetricCard
-            icon={<Clock className="text-orange-500" />}
-            title="Tempo Médio Economizado"
-            value="~4h/sem"
-            description="por professor em correções"
-          />
-        </main>
+        {/* Two-column layout: Chat (wide) + Sidebar (metrics, NLQ, charts) */}
+        <div className="grid gap-6 grid-cols-1 lg:grid-cols-12">
+          {/* Left: Chat - larger column */}
+          <div className="lg:col-span-8 lg:sticky lg:top-6 self-start">
+            <EducationalChat />
+          </div>
 
-        {/* Chat Component */}
-        <div className="mt-8">
-          <EducationalChat />
+          {/* Right: Sidebar */}
+          <div className="lg:col-span-4 space-y-6">
+            {/* Metrics */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 gap-6">
+              <MetricCard
+                icon={<Users className="text-blue-500" />}
+                title="Professores Ativos"
+                value="450"
+                description="no Teacher Copilot"
+              />
+              <MetricCard
+                icon={<BookCheck className="text-green-500" />}
+                title="Simulados Realizados"
+                value="1.230"
+                description="no Tutor AI"
+              />
+              <MetricCard
+                icon={<Clock className="text-orange-500" />}
+                title="Tempo Médio Economizado"
+                value="~4h/sem"
+                description="por professor em correções"
+              />
+            </div>
+
+            {/* NLQ Card */}
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium flex items-center gap-2">
+                  <Search className="w-4 h-4" />
+                  Pergunte aos dados
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="flex gap-2">
+                  <Input
+                    value={nlqQuery}
+                    onChange={(e) => setNlqQuery(e.target.value)}
+                    placeholder="Ex.: Qual o % que já usou o simulado do ENEM?"
+                    onKeyDown={(e) => e.key === "Enter" && handleNlqSearch()}
+                    className="font-normal"
+                  />
+                  <Button onClick={handleNlqSearch} className="font-medium">
+                    <Search className="w-4 h-4" />
+                  </Button>
+                </div>
+                {nlqResult && (
+                  <p className="text-sm text-gray-700 mt-3">{nlqResult}</p>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Charts */}
+            <ChartCard title="Análise de Adoção das Ferramentas" icon={<BarChart />}>
+              <ResponsiveContainer width="100%" height={260}>
+                <ReBarChart data={adoptionData}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="name" />
+                  <YAxis />
+                  <Tooltip />
+                  <Legend />
+                  <Bar dataKey="Usuários Ativos" fill="#3b82f6" />
+                  <Bar dataKey="Simulados Realizados" fill="#22c55e" />
+                </ReBarChart>
+              </ResponsiveContainer>
+            </ChartCard>
+            <ChartCard title="Análise de Performance (Matéria: Frações)" icon={<LineChart />}>
+              <ResponsiveContainer width="100%" height={260}>
+                <ReLineChart data={performanceData}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="name" />
+                  <YAxis domain={[0, 10]} />
+                  <Tooltip />
+                  <Legend />
+                  <Line type="monotone" dataKey="Nota Média" stroke="#8b5cf6" strokeWidth={2} />
+                </ReLineChart>
+              </ResponsiveContainer>
+            </ChartCard>
+          </div>
         </div>
-
-        <section className="mt-8 grid gap-8 grid-cols-1 lg:grid-cols-2">
-          <ChartCard title="Análise de Adoção das Ferramentas" icon={<BarChart />}>
-            <ResponsiveContainer width="100%" height={300}>
-              <ReBarChart data={adoptionData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="name" />
-                <YAxis />
-                <Tooltip />
-                <Legend />
-                <Bar dataKey="Usuários Ativos" fill="#3b82f6" />
-                <Bar dataKey="Simulados Realizados" fill="#22c55e" />
-              </ReBarChart>
-            </ResponsiveContainer>
-          </ChartCard>
-          <ChartCard title="Análise de Performance (Matéria: Frações)" icon={<LineChart />}>
-            <ResponsiveContainer width="100%" height={300}>
-              <ReLineChart data={performanceData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="name" />
-                <YAxis domain={[0, 10]} />
-                <Tooltip />
-                <Legend />
-                <Line type="monotone" dataKey="Nota Média" stroke="#8b5cf6" strokeWidth={2} />
-              </ReLineChart>
-            </ResponsiveContainer>
-          </ChartCard>
-        </section>
       </div>
     </div>
   )
