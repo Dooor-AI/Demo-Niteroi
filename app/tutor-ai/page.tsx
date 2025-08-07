@@ -468,7 +468,8 @@ export default function TutorAI() {
       </header>
 
       {/* Main Content */}
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 flex overflow-hidden max-w-7xl mx-auto w-full">
+        <div className="flex-1 flex overflow-hidden px-4 sm:px-6 lg:px-8">
         {/* Sidebar - Histórico de Conversas */}
         <div className="w-80 bg-white border-r flex flex-col">
           <div className="p-4 border-b">
@@ -776,6 +777,7 @@ export default function TutorAI() {
               )}
             </div>
           </div>
+        </div>
         </div>
       </div>
     </div>
