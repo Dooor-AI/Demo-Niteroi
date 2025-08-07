@@ -1,4 +1,4 @@
-# Educational saas demo
+# Educational saas demo .
 
 *Automatically synced with your [v0.dev](https://v0.dev) deployments*
 
